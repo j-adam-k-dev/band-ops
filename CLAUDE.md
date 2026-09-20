@@ -12,7 +12,8 @@ Three independently deployable pieces. `web` is the only thing that calls both A
 and `notes-api` don't talk to each other in v1 (deliberate simplification, documented as a
 stretch-goal callout for the interview, not a gap).
 
-- **web** — Nuxt 3 / Vue 3, port 3000. Minimal scaffold only so far — no pages built yet.
+- **web** — Nuxt 4 / Vue 3, port 3000 (scaffold is Nuxt `^4.5.2`, uses the `app/` source dir).
+  Talks to both APIs through a Nitro BFF proxy — never directly (see M4 note). Styled with Nuxt UI v4.
 - **core-api** — Fastify + Prisma 7, port 3001. Owns Postgres: bands, members, venues, gigs,
   songs, setlists.
 - **notes-api** — Fastify + Mongoose, port 3002. Owns MongoDB: song notes, rig/plugin configs,
@@ -31,7 +32,10 @@ What exists right now:
   M2 layout note below.
 - `notes-api`: `/health` plus **full CRUD** for all three Mongo collections — song-notes,
   rig-configs, gig-checklists. See the M3 layout note below.
-- `web`: untouched Nuxt minimal template, no app code yet (Sessions 4–5).
+- `web`: Session 4 (M4) done — Nuxt UI app shell + **read/create/delete** pages for the core
+  Postgres entities (bands incl. member management, venues, songs, gigs). Verified live against the
+  running stack. See the M4 layout note below. Editing (PATCH), the setlist builder, and notes-api
+  pages are Session 5 (M5).
 - `core-api/scripts/seed.js` (`npm run seed` from `core-api/`): idempotent seed that POSTs a linked
   dataset into **both** APIs (band/members/venues/songs/gig/setlist in Postgres; song-note,
   rig-configs, gig-checklist in Mongo that reference the Postgres ids).
@@ -76,6 +80,32 @@ Verification note: same constraint as M2 — no Docker/Mongo in the M3 session, 
 first booted with `MONGO_URL` unset (startup tolerates it and still listens) to confirm route
 registration, Zod validation, and the error handler on all validation paths. Live Mongo writes were
 then confirmed on 2026-09-20 via `docker compose up --build` + `npm run seed` (see the M2 note).
+
+### web M4 layout (added Session 4)
+
+Nuxt 4 app under `web/app/` (+ `web/server/`), styled with Nuxt UI v4:
+- `nuxt.config.ts` — `modules: ['@nuxt/ui']`, `css: ['~/assets/css/main.css']`, and `runtimeConfig`
+  with `coreApiUrl` / `notesApiUrl` (default `localhost:3001` / `:3002`, overridable via env).
+- `server/routes/api/core/[...path].ts` and `.../notes/[...path].ts` — Nitro proxy handlers using
+  `proxyRequest` to forward `/api/core/**` → core-api and `/api/notes/**` → notes-api. This is the
+  BFF pattern: the browser only ever calls the Nuxt origin, so there's **no CORS** and no API
+  changes. All frontend fetches hit `/api/core/...` or `/api/notes/...`, never the APIs directly.
+- `app/assets/css/main.css` — `@import "tailwindcss"; @import "@nuxt/ui";`. `app.vue` wraps in
+  `<UApp>` (required by Nuxt UI for toasts/overlays). `app/layouts/default.vue` = top nav + color
+  mode toggle.
+- `app/types/index.ts` — hand-maintained TS interfaces mirroring both APIs' shapes.
+- `app/composables/useApi.ts` — `send()` wraps `$fetch` for mutations, toasts success/error, and
+  unpacks the APIs' `{ error, message, details[] }` body; returns `{ ok, data }`.
+- `app/utils/format.ts` — date/duration formatters (auto-imported).
+- `app/pages/` — `index.vue` (dashboard w/ counts), `bands/index.vue` + `bands/[id].vue` (members),
+  `venues/`, `songs/`, `gigs/` (venue picker). Lists use plain styled rows (not `UTable`) to keep
+  the component API surface small. Deletes currently use native `confirm()` (a Session 5 polish
+  target — replace with a Nuxt UI modal).
+
+Verification note: Docker WAS reachable in the M4 session (the user had the stack up), so the app
+was verified live in the browser pane against real seeded data — dashboard counts, the band→members
+relation, a create+delete round-trip with toast, and the gig→venue→setlist deep include all
+rendered correctly.
 
 ## Data model
 
@@ -126,12 +156,16 @@ re-debugged from scratch:
    - For future schema changes, run `npx prisma migrate dev --name <change>` locally against a live
      DB (it records the migration and regenerates the client), then commit the new folder.
 
-## Next up: Sessions 4–5 (M4/M5) — Nuxt pages against the now-working APIs
+## Next up: Session 5 (M5) — finish the frontend
 
-Both APIs now expose full CRUD. Next is building the `web` Nuxt 3 app: pages/components that call
-`core-api` (:3001) and `notes-api` (:3002) over REST — list/detail/edit views for bands, gigs,
-setlists, and the notes collections. After that: auth (Session 6), deploy (Session 7), polish
-(Session 8).
+M4 built read/create/delete for the core Postgres entities. Session 5:
+- **Editing (PATCH)** across bands/venues/songs/gigs (inline or modal forms).
+- **Setlist builder** — a gig detail page (`gigs/[id].vue`) to create a setlist and add/reorder/
+  remove songs (uses `PUT /setlists/:id/songs` replace-all + the add/remove endpoints).
+- **notes-api pages** — song notes, rig configs, gig checklists (against `/api/notes/...`).
+- Polish: replace native `confirm()` deletes with a Nuxt UI modal; loading skeletons.
+
+After that: auth (Session 6), deploy (Session 7), final polish (Session 8).
 
 ## Running locally
 

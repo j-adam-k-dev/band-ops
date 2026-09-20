@@ -39,6 +39,8 @@ The seed script (`core-api/scripts/seed.js`) populates a band + members, venues,
 
 ## Status
 
-Sessions 1–3 are done (M1 scaffold, M2 core-api, M3 notes-api). Both services boot, connect to their databases, and expose full CRUD (with Zod validation): `core-api` for every Postgres entity — bands, members, venues, songs, gigs, setlists — and `notes-api` for all three Mongo collections — song-notes, rig-configs, gig-checklists. Next up is the Nuxt `web` frontend (Sessions 4–5). The seed script now populates both databases.
+Sessions 1–4 are done. Both APIs expose full CRUD (with Zod validation): `core-api` for every Postgres entity — bands, members, venues, songs, gigs, setlists — and `notes-api` for all three Mongo collections — song-notes, rig-configs, gig-checklists. The `web` frontend (Nuxt 4 + Nuxt UI) now has an app shell and read/create/delete pages for the core entities, talking to both APIs through a Nitro proxy (no CORS). Session 5 adds editing, the setlist builder, and the notes-api pages. The seed script populates both databases.
+
+> Note: the frontend calls the APIs via a same-origin proxy, so `core-api` and `notes-api` must be running (`docker compose up`) for `web`'s pages to load data.
 
 `core-api` now applies a tracked Prisma migration via `prisma migrate deploy` on start (`prisma/migrations/`). `migrate deploy` expects a fresh database — if you have a Postgres volume left over from the earlier `db push` scaffold, run `docker compose down -v` once before the first `up`.
