@@ -18,18 +18,41 @@ stretch-goal callout for the interview, not a gap).
 - **notes-api** — Fastify + Mongoose, port 3002. Owns MongoDB: song notes, rig/plugin configs,
   gig checklists.
 
-## Current status: Session 1 (M1) complete and verified
+## Current status: Session 2 (M2) complete
 
-`docker compose up --build` successfully boots Postgres, MongoDB, `core-api`, and `notes-api`.
-Both `/health` endpoints return `{ "status": "ok", "db": "connected" }`. `web` runs separately via
-`npm run dev` (not in Compose — see root README).
+M1 (scaffold) and M2 (full core-api CRUD) are done. `docker compose up --build` boots Postgres,
+MongoDB, `core-api`, and `notes-api`; both `/health` endpoints return
+`{ "status": "ok", "db": "connected" }`. `web` runs separately via `npm run dev` (not in Compose —
+see root README).
 
 What exists right now:
-- `core-api`: `/health`, `GET/POST /bands` (working example only — full CRUD across all entities
-  is the next milestone).
+- `core-api`: `/health` plus **full CRUD** for every Postgres entity — bands, members, venues,
+  songs, gigs, setlists (incl. setlist song management via the `SetlistSong` join table). See the
+  M2 layout note below.
 - `notes-api`: `/health`, `GET/POST /song-notes`, `GET /rig-configs`, `GET /gig-checklists`
-  (same — working examples, not full CRUD yet).
+  (still working examples only — full CRUD is Session 3 / M3).
 - `web`: untouched Nuxt minimal template, no app code yet.
+
+### core-api M2 layout (added Session 2)
+
+Routes were pulled out of `index.js` into a conventional per-resource structure:
+- `src/schemas/*.js` — Zod schemas (create + partial-update) per entity, plus shared `common.js`
+  (`idParamSchema`). Validation is manual: handlers call `schema.parse(...)` and let `ZodError`
+  propagate.
+- `src/routes/*.js` — one Fastify plugin per resource, registered in `index.js`. Handlers stay thin
+  (parse → Prisma call). Reads use `findUniqueOrThrow` so a missing id throws `P2025`.
+- `src/lib/errorHandler.js` — single `setErrorHandler` maps `ZodError` → 400,
+  Prisma `P2025` → 404, `P2002` → 409, `P2003` → 409; anything else → generic 500 (logged).
+  Prisma errors are matched by string `code`, not by importing the generated error class.
+- Verbs: `GET` (list + by-id), `POST` (201), `PATCH` (partial update), `DELETE` (204). Setlist
+  song ops: `POST /setlists/:id/songs`, `PUT /setlists/:id/songs` (atomic replace-all via
+  `$transaction`), `DELETE /setlists/:id/songs/:songId`.
+
+Verification note: Docker wasn't available in the M2 session, so the stack wasn't booted against a
+live DB there. Instead deps were installed locally, the Prisma client generated, and the server
+booted against a dummy `DATABASE_URL` (the pg adapter connects lazily) to confirm route
+registration, Zod validation, and the error handler end-to-end. Run `docker compose up --build`
+for a full live-DB smoke test.
 
 ## Data model
 
@@ -70,12 +93,13 @@ re-debugged from scratch:
    settled, run `npx prisma migrate dev --name init` locally, commit the generated
    `prisma/migrations/` folder, and switch the Dockerfile to `prisma migrate deploy`.
 
-## Next up: Session 2 (M2) — full core-api CRUD
+## Next up: Session 3 (M3) — full notes-api CRUD
 
-Add complete CRUD REST endpoints (with Zod validation) for every Postgres entity — bands, members,
-venues, gigs, songs, setlists — beyond the current `/bands` example. Then Session 3 (M3) does the
-same for `notes-api`'s three Mongo collections. After that, Nuxt pages against the now-working
-APIs (Sessions 4–5), auth (Session 6), deploy (Session 7), polish (Session 8).
+Add complete CRUD (with Zod validation) for `notes-api`'s three Mongo collections — `song_notes`,
+`rig_configs`, `gig_checklists` — beyond the current working-example endpoints, mirroring the
+per-resource schemas/routes/error-handler structure established in core-api's M2. After that, Nuxt
+pages against the now-working APIs (Sessions 4–5), auth (Session 6), deploy (Session 7), polish
+(Session 8).
 
 ## Running locally
 
