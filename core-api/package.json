@@ -7,7 +7,8 @@
     "dev": "tsx watch src/index.js",
     "start": "tsx src/index.js",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "seed": "node scripts/seed.js"
   },
   "keywords": [],
   "author": "",

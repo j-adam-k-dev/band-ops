@@ -20,7 +20,10 @@ Full architecture, data model, and build plan: see the project's planning doc.
 # 1. Bring up Postgres, Mongo, and both APIs
 docker compose up --build
 
-# 2. In a separate terminal, run the frontend with hot-reload
+# 2. (Optional) load a realistic sample dataset into core-api
+cd core-api && npm install && npm run seed
+
+# 3. In a separate terminal, run the frontend with hot-reload
 cd web
 npm install
 npm run dev
@@ -32,8 +35,10 @@ Once it's up:
 - `notes-api` health check: http://localhost:3002/health
 - `web`: http://localhost:3000
 
+The seed script (`core-api/scripts/seed.js`) populates a band + members, venues, songs, a gig, and an ordered setlist by POSTing through the real API. It's idempotent, so it's safe to re-run.
+
 ## Status
 
-This is the Session 1 / M1 scaffold: both services boot, connect to their databases, and expose a `/health` endpoint plus one working example route each (`GET/POST /bands` on core-api, `GET/POST /song-notes` on notes-api). Full CRUD across all entities is Session 2 (core-api) and Session 3 (notes-api).
+Sessions 1–2 (M1 scaffold, M2 core-api) are done. Both services boot and connect to their databases; `core-api` exposes full CRUD (with Zod validation) for every Postgres entity — bands, members, venues, songs, gigs, setlists. `notes-api` still has one working example route per collection; its full CRUD is Session 3 (M3).
 
-**Known follow-up:** `core-api`'s Prisma schema exists but has no tracked migration yet — the Dockerfile uses `prisma db push` to get started fast. Once the schema settles, run `npx prisma migrate dev --name init` locally, commit the generated `prisma/migrations/` folder, and switch the Dockerfile to `prisma migrate deploy`.
+`core-api` now applies a tracked Prisma migration via `prisma migrate deploy` on start (`prisma/migrations/`). `migrate deploy` expects a fresh database — if you have a Postgres volume left over from the earlier `db push` scaffold, run `docker compose down -v` once before the first `up`.
