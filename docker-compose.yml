@@ -1,0 +1,62 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: band_ops
+      POSTGRES_PASSWORD: band_ops
+      POSTGRES_DB: band_ops
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U band_ops -d band_ops"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: band_ops
+      MONGO_INITDB_ROOT_PASSWORD: band_ops
+      MONGO_INITDB_DATABASE: band_ops
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  core-api:
+    build: ./core-api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: "postgresql://band_ops:band_ops@postgres:5432/band_ops?schema=public"
+      PORT: 3001
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  notes-api:
+    build: ./notes-api
+    restart: unless-stopped
+    environment:
+      MONGO_URL: "mongodb://band_ops:band_ops@mongo:27017/band_ops?authSource=admin"
+      PORT: 3002
+    ports:
+      - "3002:3002"
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  mongo_data:

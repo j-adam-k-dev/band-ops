@@ -1,0 +1,82 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Band {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+  members   Member[]
+
+  @@map("bands")
+}
+
+model Member {
+  id     String  @id @default(uuid())
+  bandId String  @map("band_id")
+  band   Band    @relation(fields: [bandId], references: [id])
+  name   String
+  role   String?
+
+  @@map("members")
+}
+
+model Venue {
+  id        String  @id @default(uuid())
+  name      String
+  address   String?
+  isOutdoor Boolean @default(false) @map("is_outdoor")
+  contact   String?
+  gigs      Gig[]
+
+  @@map("venues")
+}
+
+model Song {
+  id           String        @id @default(uuid())
+  title        String
+  durationSec  Int?          @map("duration_sec")
+  musicalKey   String?       @map("musical_key")
+  tempoBpm     Int?          @map("tempo_bpm")
+  setlistSongs SetlistSong[]
+
+  @@map("songs")
+}
+
+model Gig {
+  id         String    @id @default(uuid())
+  venueId    String    @map("venue_id")
+  venue      Venue     @relation(fields: [venueId], references: [id])
+  date       DateTime
+  loadInTime DateTime? @map("load_in_time")
+  status     String    @default("planned")
+  setlist    Setlist?
+
+  @@map("gigs")
+}
+
+model Setlist {
+  id    String        @id @default(uuid())
+  gigId String        @unique @map("gig_id")
+  gig   Gig           @relation(fields: [gigId], references: [id])
+  name  String
+  songs SetlistSong[]
+
+  @@map("setlists")
+}
+
+model SetlistSong {
+  setlistId String  @map("setlist_id")
+  songId    String  @map("song_id")
+  position  Int
+  setlist   Setlist @relation(fields: [setlistId], references: [id])
+  song      Song    @relation(fields: [songId], references: [id])
+
+  @@id([setlistId, songId])
+  @@map("setlist_songs")
+}
