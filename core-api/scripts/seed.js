@@ -1,56 +1,63 @@
-// Seeds a realistic, fully-linked dataset into core-api via its REST API.
+// Seeds a realistic, fully-linked dataset into BOTH services via their REST APIs:
+//   core-api  (Postgres): band, members, venues, songs, gig, ordered setlist
+//   notes-api (Mongo):    a song note, rig configs, and a gig checklist that
+//                         reference the core-api ids created above
 //
-// Why the API (not Prisma directly): running through the real endpoints also
-// exercises Zod validation, the route layer, and the error handler — so a clean
-// seed run is proof the whole stack works end-to-end, not just the database.
+// Why the API (not the DB directly): running through the real endpoints also
+// exercises Zod validation, the route layer, and the error handlers — so a clean
+// seed run is proof the whole stack works end-to-end, not just the databases.
 //
-// Idempotent: entities with a natural name/title are reused if already present,
-// and setlist songs are set with PUT (replace-all), so re-running converges to
-// the same state instead of creating duplicates.
+// Idempotent: entities with a natural key are reused if already present, and
+// setlist songs are set with PUT (replace-all), so re-running converges to the
+// same state instead of creating duplicates.
 //
-//   Prereq: `docker compose up` (core-api reachable on :3001)
+//   Prereq: `docker compose up` (core-api :3001 and notes-api :3002 reachable)
 //   Run:    npm run seed            (from core-api/)
-//   Custom: CORE_API_URL=http://host:port npm run seed
+//   Custom: CORE_API_URL=... NOTES_API_URL=... npm run seed
 
-const BASE = process.env.CORE_API_URL ?? 'http://localhost:3001';
+const CORE = process.env.CORE_API_URL ?? 'http://localhost:3001';
+const NOTES = process.env.NOTES_API_URL ?? 'http://localhost:3002';
 
-async function api(method, path, body) {
+async function api(method, path, body, base = CORE) {
   let res;
   try {
-    res = await fetch(`${BASE}${path}`, {
+    res = await fetch(`${base}${path}`, {
       method,
       headers: body ? { 'content-type': 'application/json' } : undefined,
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch (err) {
     throw new Error(
-      `Cannot reach core-api at ${BASE} (${err.code ?? err.message}). ` +
+      `Cannot reach ${base} (${err.code ?? err.message}). ` +
         'Is the stack up? Run `docker compose up` first.',
     );
   }
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
   if (!res.ok) {
-    throw new Error(`${method} ${path} -> ${res.status}: ${JSON.stringify(data)}`);
+    throw new Error(`${method} ${base}${path} -> ${res.status}: ${JSON.stringify(data)}`);
   }
   return data;
 }
 
 // GET the collection, reuse the first match, otherwise POST to create.
-async function ensure(path, match, createBody, label) {
-  const list = await api('GET', path);
+async function ensure(path, match, createBody, label, base = CORE) {
+  const list = await api('GET', path, undefined, base);
   const found = list.find(match);
   if (found) {
-    console.log(`= ${label} (existing) ${found.id}`);
+    console.log(`= ${label} (existing) ${found._id ?? found.id}`);
     return found;
   }
-  const created = await api('POST', path, createBody);
-  console.log(`+ ${label} (created)  ${created.id}`);
+  const created = await api('POST', path, createBody, base);
+  console.log(`+ ${label} (created)  ${created._id ?? created.id}`);
   return created;
 }
 
 async function main() {
-  console.log(`Seeding core-api at ${BASE} ...\n`);
+  console.log(`Seeding core-api ${CORE} and notes-api ${NOTES} ...\n`);
+
+  // ---- core-api (Postgres) -------------------------------------------------
+  console.log('-- core-api --');
 
   // 1. Band + members. GET /bands includes members, so we can dedupe on both.
   const band = await ensure(
@@ -60,18 +67,22 @@ async function main() {
     'band  The Void Callers',
   );
 
-  const members = [
+  const memberSpecs = [
     { name: 'Ava Rhodes', role: 'vocals' },
     { name: 'Miles Chen', role: 'guitar' },
     { name: 'Dre Okafor', role: 'drums' },
     { name: 'Sam Ellis', role: 'bass' },
   ];
-  for (const m of members) {
-    if (band.members?.some((existing) => existing.name === m.name)) {
-      console.log(`  = member (existing) ${m.name}`);
+  const roster = [];
+  for (const m of memberSpecs) {
+    const existing = band.members?.find((x) => x.name === m.name);
+    if (existing) {
+      console.log(`  = member (existing) ${existing.name}`);
+      roster.push(existing);
     } else {
       const created = await api('POST', '/members', { bandId: band.id, ...m });
       console.log(`  + member (created)  ${created.name} — ${created.role}`);
+      roster.push(created);
     }
   }
 
@@ -126,7 +137,78 @@ async function main() {
   await api('PUT', `/setlists/${setlist.id}/songs`, { songs: ordered });
   console.log(`  ~ setlist songs set: ${ordered.length} in order`);
 
-  console.log('\nDone. Try:  curl http://localhost:3001/gigs');
+  // ---- notes-api (Mongo) ---------------------------------------------------
+  // References the core-api ids created above (no cross-DB FK, by design).
+  console.log('\n-- notes-api --');
+
+  const redshift = songs.find((s) => s.title === 'Redshift');
+  await ensure(
+    `/song-notes?songId=${redshift.id}&bandId=${band.id}`,
+    () => true,
+    {
+      songId: redshift.id,
+      bandId: band.id,
+      tempoNotes: 'Click at 128; resist pushing into the chorus.',
+      pluginChain: ['HPF 80Hz', 'Comp 4:1', 'Plate reverb'],
+      drumMapNotes: 'Ride only on the bridge.',
+      freeformText: 'Tempo tends to creep live — watch it.',
+    },
+    'song-note for Redshift',
+    NOTES,
+  );
+
+  const guitarist = roster.find((r) => r.role === 'guitar');
+  const drummer = roster.find((r) => r.role === 'drums');
+  if (guitarist) {
+    await ensure(
+      `/rig-configs?memberId=${guitarist.id}`,
+      (r) => r.instrument === 'guitar',
+      {
+        memberId: guitarist.id,
+        instrument: 'guitar',
+        gearList: ['Telecaster', 'Deluxe Reverb', 'Tube Screamer'],
+        signalChain: ['Guitar', 'Tube Screamer', 'Amp'],
+      },
+      'rig-config for guitarist',
+      NOTES,
+    );
+  }
+  if (drummer) {
+    await ensure(
+      `/rig-configs?memberId=${drummer.id}`,
+      (r) => r.instrument === 'drums',
+      {
+        memberId: drummer.id,
+        instrument: 'drums',
+        gearList: ['5-piece kit', '20" ride', 'in-ear monitors'],
+        signalChain: [],
+      },
+      'rig-config for drummer',
+      NOTES,
+    );
+  }
+
+  await ensure(
+    `/gig-checklists?gigId=${gig.id}`,
+    () => true,
+    {
+      gigId: gig.id,
+      venueType: 'indoor', // The Basement is indoor
+      items: [
+        { label: 'Load in by 5:30' },
+        { label: 'Line check all channels' },
+        { label: 'Merch table set up' },
+        { label: 'Set list taped to floor' },
+      ],
+      notes: 'Small stage — keep backline minimal.',
+    },
+    'gig-checklist for gig',
+    NOTES,
+  );
+
+  console.log('\nDone. Try:');
+  console.log('  curl http://localhost:3001/gigs');
+  console.log('  curl http://localhost:3002/song-notes');
 }
 
 main().catch((err) => {

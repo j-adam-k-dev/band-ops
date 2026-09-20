@@ -2,46 +2,25 @@ import 'dotenv/config';
 import Fastify from 'fastify';
 import mongoose from 'mongoose';
 import { connectMongo } from './db.js';
-import { SongNote } from './models/SongNote.js';
-import { RigConfig } from './models/RigConfig.js';
-import { GigChecklist } from './models/GigChecklist.js';
+import { registerErrorHandler } from './lib/errorHandler.js';
+import songNoteRoutes from './routes/songNotes.js';
+import rigConfigRoutes from './routes/rigConfigs.js';
+import gigChecklistRoutes from './routes/gigChecklists.js';
 
 const app = Fastify({ logger: true });
+
+// Maps ZodError / Mongoose errors -> 400/404/409 for every route.
+registerErrorHandler(app);
 
 app.get('/health', async () => {
   const state = mongoose.connection.readyState; // 1 = connected
   return { status: state === 1 ? 'ok' : 'error', db: state === 1 ? 'connected' : 'unreachable' };
 });
 
-// Minimal working example for M1 — full CRUD across all three collections is Session 3 (M3).
-app.get('/song-notes', async (request) => {
-  const { songId } = request.query;
-  const filter = songId ? { songId } : {};
-  return SongNote.find(filter).lean();
-});
-
-app.post('/song-notes', async (request, reply) => {
-  const { songId, bandId } = request.body ?? {};
-  if (!songId || !bandId) {
-    reply.code(400);
-    return { error: 'songId and bandId are required' };
-  }
-  const note = await SongNote.create(request.body);
-  reply.code(201);
-  return note;
-});
-
-app.get('/rig-configs', async (request) => {
-  const { memberId } = request.query;
-  const filter = memberId ? { memberId } : {};
-  return RigConfig.find(filter).lean();
-});
-
-app.get('/gig-checklists', async (request) => {
-  const { gigId } = request.query;
-  const filter = gigId ? { gigId } : {};
-  return GigChecklist.find(filter).lean();
-});
+// Full CRUD for every Mongo collection (M3). One plugin per collection.
+app.register(songNoteRoutes);
+app.register(rigConfigRoutes);
+app.register(gigChecklistRoutes);
 
 const port = process.env.PORT ? Number(process.env.PORT) : 3002;
 

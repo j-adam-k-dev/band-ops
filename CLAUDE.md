@@ -18,10 +18,10 @@ stretch-goal callout for the interview, not a gap).
 - **notes-api** — Fastify + Mongoose, port 3002. Owns MongoDB: song notes, rig/plugin configs,
   gig checklists.
 
-## Current status: Session 2 (M2) complete
+## Current status: Session 3 (M3) complete
 
-M1 (scaffold) and M2 (full core-api CRUD) are done. `docker compose up --build` boots Postgres,
-MongoDB, `core-api`, and `notes-api`; both `/health` endpoints return
+M1 (scaffold), M2 (full core-api CRUD), and M3 (full notes-api CRUD) are done. `docker compose up
+--build` boots Postgres, MongoDB, `core-api`, and `notes-api`; both `/health` endpoints return
 `{ "status": "ok", "db": "connected" }`. `web` runs separately via `npm run dev` (not in Compose —
 see root README).
 
@@ -29,9 +29,12 @@ What exists right now:
 - `core-api`: `/health` plus **full CRUD** for every Postgres entity — bands, members, venues,
   songs, gigs, setlists (incl. setlist song management via the `SetlistSong` join table). See the
   M2 layout note below.
-- `notes-api`: `/health`, `GET/POST /song-notes`, `GET /rig-configs`, `GET /gig-checklists`
-  (still working examples only — full CRUD is Session 3 / M3).
-- `web`: untouched Nuxt minimal template, no app code yet.
+- `notes-api`: `/health` plus **full CRUD** for all three Mongo collections — song-notes,
+  rig-configs, gig-checklists. See the M3 layout note below.
+- `web`: untouched Nuxt minimal template, no app code yet (Sessions 4–5).
+- `core-api/scripts/seed.js` (`npm run seed` from `core-api/`): idempotent seed that POSTs a linked
+  dataset into **both** APIs (band/members/venues/songs/gig/setlist in Postgres; song-note,
+  rig-configs, gig-checklist in Mongo that reference the Postgres ids).
 
 ### core-api M2 layout (added Session 2)
 
@@ -53,6 +56,26 @@ live DB there. Instead deps were installed locally, the Prisma client generated,
 booted against a dummy `DATABASE_URL` (the pg adapter connects lazily) to confirm route
 registration, Zod validation, and the error handler end-to-end. Run `docker compose up --build`
 for a full live-DB smoke test.
+
+### notes-api M3 layout (added Session 3)
+
+Same structure as core-api's M2, adapted for Mongoose:
+- `src/schemas/*.js` — Zod schemas (create + partial-update + query) per collection, plus shared
+  `common.js` (`objectIdParamSchema`: a doc's own `_id` is a 24-hex ObjectId; cross-service refs
+  like `songId`/`gigId`/`memberId` are core-api UUIDs validated as `z.uuid()`).
+- `src/routes/*.js` — one Fastify plugin per collection, registered in `index.js`.
+- `src/lib/errorHandler.js` — maps `ZodError` → 400, Mongoose `CastError` → 400,
+  Mongoose `ValidationError` → 400, Mongo duplicate key (11000) → 409, `err.statusCode` → that
+  status, else 500.
+- `src/lib/http.js` — `assertFound(doc, name)` throws a 404 when a query returns `null` (Mongoose
+  doesn't throw for missing docs the way Prisma's `*OrThrow` does).
+- Verbs: `GET` (list w/ optional query filter + by-id), `POST` (201), `PATCH` (partial update via
+  `findByIdAndUpdate` with `runValidators`), `DELETE` (204).
+
+Verification note: same constraint as M2 — no Docker/Mongo in the M3 session. notes-api was booted
+with `MONGO_URL` unset (startup tolerates it and still listens) to confirm route registration, Zod
+validation, and the error handler on all validation paths. DB-touching reads/writes need a live
+Mongo (`docker compose up --build`, then `npm run seed`).
 
 ## Data model
 
@@ -102,12 +125,11 @@ re-debugged from scratch:
    - For future schema changes, run `npx prisma migrate dev --name <change>` locally against a live
      DB (it records the migration and regenerates the client), then commit the new folder.
 
-## Next up: Session 3 (M3) — full notes-api CRUD
+## Next up: Sessions 4–5 (M4/M5) — Nuxt pages against the now-working APIs
 
-Add complete CRUD (with Zod validation) for `notes-api`'s three Mongo collections — `song_notes`,
-`rig_configs`, `gig_checklists` — beyond the current working-example endpoints, mirroring the
-per-resource schemas/routes/error-handler structure established in core-api's M2. After that, Nuxt
-pages against the now-working APIs (Sessions 4–5), auth (Session 6), deploy (Session 7), polish
+Both APIs now expose full CRUD. Next is building the `web` Nuxt 3 app: pages/components that call
+`core-api` (:3001) and `notes-api` (:3002) over REST — list/detail/edit views for bands, gigs,
+setlists, and the notes collections. After that: auth (Session 6), deploy (Session 7), polish
 (Session 8).
 
 ## Running locally
