@@ -24,12 +24,15 @@ RUN echo 'DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/plac
 
 EXPOSE 3001
 
-# No migration history yet at this scaffold stage, so push the schema directly.
-# Once you run `npx prisma migrate dev --name init` locally and commit the migration,
-# switch this to `npx prisma migrate deploy` instead.
+# Apply committed migrations (prisma/migrations/) to the database on start.
+# The initial migration was generated from the schema and committed, so this
+# replaces the earlier `prisma db push --accept-data-loss` scaffolding stopgap.
+# `migrate deploy` only applies pending migrations — it never resets data and
+# needs no shadow DB, which is what makes it the right command for a container
+# entrypoint (vs. `migrate dev`, which is for local development).
 #
 # Prisma 7's client generator always emits TypeScript (no plain-.js output option), even
 # for a JS project — so the app runs through tsx, which resolves the generated client's
 # ".js" import specifiers to their actual ".ts" files (the same convention TypeScript's own
 # NodeNext module resolution uses), no separate compile step needed.
-CMD ["sh", "-c", "npx prisma db push --accept-data-loss && npx tsx src/index.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && npx tsx src/index.js"]

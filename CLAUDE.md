@@ -88,10 +88,19 @@ re-debugged from scratch:
    `node` (see `package.json` scripts and the Dockerfile `CMD`); `tsx` resolves the generated
    client's `.js`-style import specifier to the real `.ts` file, the same convention TypeScript's
    own NodeNext resolution uses. No separate build/compile step needed.
-5. **No tracked Prisma migration exists yet.** `core-api/Dockerfile` uses
-   `prisma db push --accept-data-loss` as a get-started-fast stopgap. Once the schema feels
-   settled, run `npx prisma migrate dev --name init` locally, commit the generated
-   `prisma/migrations/` folder, and switch the Dockerfile to `prisma migrate deploy`.
+5. **Tracked migration now exists (converted in Session 2).** The initial migration lives in
+   `core-api/prisma/migrations/<ts>_init/` (+ `migration_lock.toml`) and `core-api/Dockerfile`
+   runs `prisma migrate deploy` on start — the earlier `prisma db push --accept-data-loss` stopgap
+   is gone. Because Docker/Postgres wasn't available in that session, the migration SQL was
+   generated offline with `prisma migrate diff --from-empty --to-schema prisma/schema.prisma
+   --script` (identical output to `migrate dev`) rather than by running `migrate dev` against a live
+   DB; it has not yet been applied to a running database. Two caveats to know:
+   - `migrate deploy` expects a **fresh** database. If a Postgres volume was already populated by
+     the old `db push` path, `deploy` will fail (tables exist, no migration history) — run
+     `docker compose down -v` once to drop the volume, or `prisma migrate resolve --applied <name>`
+     to baseline it.
+   - For future schema changes, run `npx prisma migrate dev --name <change>` locally against a live
+     DB (it records the migration and regenerates the client), then commit the new folder.
 
 ## Next up: Session 3 (M3) — full notes-api CRUD
 
