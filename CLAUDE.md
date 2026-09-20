@@ -51,11 +51,11 @@ Routes were pulled out of `index.js` into a conventional per-resource structure:
   song ops: `POST /setlists/:id/songs`, `PUT /setlists/:id/songs` (atomic replace-all via
   `$transaction`), `DELETE /setlists/:id/songs/:songId`.
 
-Verification note: Docker wasn't available in the M2 session, so the stack wasn't booted against a
-live DB there. Instead deps were installed locally, the Prisma client generated, and the server
-booted against a dummy `DATABASE_URL` (the pg adapter connects lazily) to confirm route
-registration, Zod validation, and the error handler end-to-end. Run `docker compose up --build`
-for a full live-DB smoke test.
+Verification note: Docker wasn't available in the M2/M3 sessions, so the code was first verified
+without a live DB (deps installed locally, Prisma client generated, server booted against a dummy
+`DATABASE_URL` to confirm route registration, Zod validation, and the error handler). The full live
+stack was then verified on 2026-09-20: `docker compose up --build` + `npm run seed` populated both
+Postgres and Mongo end-to-end (migration applied, all CRUD accepting writes, cross-DB refs intact).
 
 ### notes-api M3 layout (added Session 3)
 
@@ -72,10 +72,10 @@ Same structure as core-api's M2, adapted for Mongoose:
 - Verbs: `GET` (list w/ optional query filter + by-id), `POST` (201), `PATCH` (partial update via
   `findByIdAndUpdate` with `runValidators`), `DELETE` (204).
 
-Verification note: same constraint as M2 — no Docker/Mongo in the M3 session. notes-api was booted
-with `MONGO_URL` unset (startup tolerates it and still listens) to confirm route registration, Zod
-validation, and the error handler on all validation paths. DB-touching reads/writes need a live
-Mongo (`docker compose up --build`, then `npm run seed`).
+Verification note: same constraint as M2 — no Docker/Mongo in the M3 session, so notes-api was
+first booted with `MONGO_URL` unset (startup tolerates it and still listens) to confirm route
+registration, Zod validation, and the error handler on all validation paths. Live Mongo writes were
+then confirmed on 2026-09-20 via `docker compose up --build` + `npm run seed` (see the M2 note).
 
 ## Data model
 
@@ -117,7 +117,8 @@ re-debugged from scratch:
    is gone. Because Docker/Postgres wasn't available in that session, the migration SQL was
    generated offline with `prisma migrate diff --from-empty --to-schema prisma/schema.prisma
    --script` (identical output to `migrate dev`) rather than by running `migrate dev` against a live
-   DB; it has not yet been applied to a running database. Two caveats to know:
+   DB. It has since been applied successfully to a live Postgres via `migrate deploy` (2026-09-20).
+   Two caveats to know:
    - `migrate deploy` expects a **fresh** database. If a Postgres volume was already populated by
      the old `db push` path, `deploy` will fail (tables exist, no migration history) — run
      `docker compose down -v` once to drop the volume, or `prisma migrate resolve --applied <name>`
